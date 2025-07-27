@@ -1,0 +1,17 @@
+{
+  "name": "to-do-list",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/uuid": "^10.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "elysia": "^1.3.5",
+    "uuid": "^11.1.0"
+  }
+}
