@@ -7,14 +7,14 @@ const taskService = new TaskService();
 
 export const TaskController = new Elysia({ prefix: '/tasks' })
   // Obtener todas las tareas
-  .get('/', () => {
-    const tasks = taskService.getAllTasks();
+  .get('/', async () => {
+    const tasks = await taskService.getAllTasks();
     return ApiResponse.success(tasks, 'Tareas obtenidas correctamente');
   })
 
   // Obtener una tarea por ID
-  .get('/:id', ({ params: { id } }) => {
-    const task = taskService.getTaskById(id);
+  .get('/:id', async ({ params: { id } }) => {
+    const task = await taskService.getTaskById(id);
     if (!task) {
       return new Response(JSON.stringify(ApiResponse.error('Tarea no encontrada', 404)), { 
         status: 404, 
@@ -26,7 +26,7 @@ export const TaskController = new Elysia({ prefix: '/tasks' })
 
   // Crear una nueva tarea
   .post('/', 
-    ({ body }) => {
+    async ({ body }) => {
       const { title, description, priority, projectId, deadline } = body;
       
       let deadlineDate: Date | undefined = undefined;
@@ -40,7 +40,7 @@ export const TaskController = new Elysia({ prefix: '/tasks' })
         }
       }
       
-      const newTask = taskService.createTask(title, description, priority, projectId, deadlineDate);
+      const newTask = await taskService.createTask(title, description, priority, projectId, deadlineDate);
       return ApiResponse.success(newTask, 'Tarea creada correctamente');
     },
     {
@@ -54,68 +54,67 @@ export const TaskController = new Elysia({ prefix: '/tasks' })
     }
   )
 
-  // Actualizar una tarea
+  // Actualizar una tarea existente
   .put('/:id', 
-    ({ params: { id }, body }) => {
-      const { title, description, priority, deadline } = body;
+    async ({ params: { id }, body }) => {
+      const { title, description, priority, status, projectId, deadline } = body;
       
-      let updates: any = {};
-      
-      if (title) updates.title = title;
-      if (description) updates.description = description;
-      if (priority) updates.priority = priority;
-      
+      let deadlineDate: Date | undefined = undefined;
       if (deadline) {
-        const deadlineDate = new Date(deadline);
+        deadlineDate = new Date(deadline);
         if (isNaN(deadlineDate.getTime())) {
           return new Response(JSON.stringify(ApiResponse.error('Fecha límite no válida', 400)), { 
             status: 400, 
             headers: { 'Content-Type': 'application/json' } 
           });
         }
-        updates.deadline = deadlineDate;
       }
       
-      const task = taskService.updateTask(id, updates);
-      if (!task) {
+      const updatedTask = await taskService.updateTask(id, { 
+        title, 
+        description, 
+        priority, 
+        status, 
+        projectId, 
+        deadline: deadlineDate 
+      });
+      
+      if (!updatedTask) {
         return new Response(JSON.stringify(ApiResponse.error('Tarea no encontrada', 404)), { 
           status: 404, 
           headers: { 'Content-Type': 'application/json' } 
         });
       }
-      return ApiResponse.success(task, 'Tarea actualizada correctamente');
+      
+      return ApiResponse.success(updatedTask, 'Tarea actualizada correctamente');
     },
     {
       body: t.Object({
         title: t.Optional(t.String()),
         description: t.Optional(t.String()),
         priority: t.Optional(t.Enum(TaskPriority)),
-        deadline: t.Optional(t.String()) // Fecha en formato ISO
+        status: t.Optional(t.Enum(TaskStatus)),
+        projectId: t.Optional(t.String()),
+        deadline: t.Optional(t.String())
       })
     }
   )
 
   // Cambiar el estado de una tarea
   .patch('/:id/status', 
-    ({ params: { id }, body }) => {
+    async ({ params: { id }, body }) => {
       const { status } = body;
       
-      // Validar que el estado sea válido
-      if (!Object.values(TaskStatus).includes(status as TaskStatus)) {
-        return new Response(JSON.stringify(ApiResponse.error('Estado no válido', 400)), { 
-          status: 400, 
-          headers: { 'Content-Type': 'application/json' } 
-        });
-      }
+      const updatedTask = await taskService.changeTaskStatus(id, status);
       
-      const task = taskService.changeTaskStatus(id, status as TaskStatus);
-      if (!task) {
+      if (!updatedTask) {
         return new Response(JSON.stringify(ApiResponse.error('Tarea no encontrada', 404)), { 
           status: 404, 
           headers: { 'Content-Type': 'application/json' } 
         });
       }
-      return ApiResponse.success(task, 'Estado de la tarea actualizado correctamente');
+      
+      return ApiResponse.success(updatedTask, 'Estado de la tarea actualizado correctamente');
     },
     {
       body: t.Object({
@@ -125,20 +124,21 @@ export const TaskController = new Elysia({ prefix: '/tasks' })
   )
 
   // Eliminar una tarea
-  .delete('/:id', ({ params: { id } }) => {
-    const deleted = taskService.deleteTask(id);
+  .delete('/:id', async ({ params: { id } }) => {
+    const deleted = await taskService.deleteTask(id);
+    
     if (!deleted) {
       return new Response(JSON.stringify(ApiResponse.error('Tarea no encontrada', 404)), { 
         status: 404, 
         headers: { 'Content-Type': 'application/json' } 
       });
     }
+    
     return ApiResponse.success(null, 'Tarea eliminada correctamente');
   })
 
   // Filtrar tareas por estado
-  .get('/filter/status/:status', ({ params: { status } }) => {
-    // Validar que el estado sea válido
+  .get('/filter/status/:status', async ({ params: { status } }) => {
     if (!Object.values(TaskStatus).includes(status as TaskStatus)) {
       return new Response(JSON.stringify(ApiResponse.error('Estado no válido', 400)), { 
         status: 400, 
@@ -146,13 +146,12 @@ export const TaskController = new Elysia({ prefix: '/tasks' })
       });
     }
     
-    const tasks = taskService.getTasksByStatus(status as TaskStatus);
-    return ApiResponse.success(tasks, `Tareas con estado ${status} obtenidas correctamente`);
+    const tasks = await taskService.getTasksByStatus(status as TaskStatus);
+    return ApiResponse.success(tasks, 'Tareas filtradas por estado correctamente');
   })
-  
+
   // Filtrar tareas por prioridad
-  .get('/filter/priority/:priority', ({ params: { priority } }) => {
-    // Validar que la prioridad sea válida
+  .get('/filter/priority/:priority', async ({ params: { priority } }) => {
     if (!Object.values(TaskPriority).includes(priority as TaskPriority)) {
       return new Response(JSON.stringify(ApiResponse.error('Prioridad no válida', 400)), { 
         status: 400, 
@@ -160,42 +159,25 @@ export const TaskController = new Elysia({ prefix: '/tasks' })
       });
     }
     
-    const tasks = taskService.getTasksByPriority(priority as TaskPriority);
-    return ApiResponse.success(tasks, `Tareas con prioridad ${priority} obtenidas correctamente`);
+    const tasks = await taskService.getTasksByPriority(priority as TaskPriority);
+    return ApiResponse.success(tasks, 'Tareas filtradas por prioridad correctamente');
   })
-  
-  // Obtener tareas próximas a vencer
-  .get('/upcoming/:days?', ({ params: { days } }) => {
-    const daysNumber = days ? parseInt(days) : 7;
-    if (isNaN(daysNumber) || daysNumber <= 0) {
-      return new Response(JSON.stringify(ApiResponse.error('Número de días no válido', 400)), { 
-        status: 400, 
-        headers: { 'Content-Type': 'application/json' } 
-      });
-    }
-    
-    const tasks = taskService.getUpcomingTasks(daysNumber);
-    return ApiResponse.success(tasks, `Tareas próximas a vencer en los próximos ${daysNumber} días`);
-  })
-  
-  // Obtener tareas vencidas
-  .get('/overdue', () => {
-    const tasks = taskService.getOverdueTasks();
-    return ApiResponse.success(tasks, 'Tareas vencidas obtenidas correctamente');
-  })
-  
+
   // Añadir un comentario a una tarea
   .post('/:id/comments', 
-    ({ params: { id }, body }) => {
+    async ({ params: { id }, body }) => {
       const { text } = body;
-      const task = taskService.addCommentToTask(id, text);
-      if (!task) {
+      
+      const updatedTask = await taskService.addCommentToTask(id, text);
+      
+      if (!updatedTask) {
         return new Response(JSON.stringify(ApiResponse.error('Tarea no encontrada', 404)), { 
           status: 404, 
           headers: { 'Content-Type': 'application/json' } 
         });
       }
-      return ApiResponse.success(task, 'Comentario añadido correctamente');
+      
+      return ApiResponse.success(updatedTask, 'Comentario añadido correctamente');
     },
     {
       body: t.Object({
@@ -203,17 +185,9 @@ export const TaskController = new Elysia({ prefix: '/tasks' })
       })
     }
   )
-  
+
   // Obtener comentarios de una tarea
-  .get('/:id/comments', ({ params: { id } }) => {
-    const task = taskService.getTaskById(id);
-    if (!task) {
-      return new Response(JSON.stringify(ApiResponse.error('Tarea no encontrada', 404)), { 
-        status: 404, 
-        headers: { 'Content-Type': 'application/json' } 
-      });
-    }
-    
-    const comments = taskService.getTaskComments(id);
+  .get('/:id/comments', async ({ params: { id } }) => {
+    const comments = await taskService.getTaskComments(id);
     return ApiResponse.success(comments, 'Comentarios obtenidos correctamente');
   });

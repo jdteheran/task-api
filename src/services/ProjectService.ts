@@ -1,153 +1,103 @@
 import type { Project } from '../models/Project';
-import type { Task } from '../models/Task';
-import { TaskStatus } from '../models/Task';
-import { TaskService } from './TaskService';
+import { ProjectModel } from '../models/Project.schema';
+import type { ProjectDocument } from '../models/Project.schema';
 import { v4 as uuidv4 } from 'uuid';
 
-// Almacenamiento en memoria para los proyectos
-let projects: Project[] = [];
-
 export class ProjectService {
-  private taskService: TaskService;
-
-  constructor(taskService: TaskService) {
-    this.taskService = taskService;
-  }
-
   // Obtener todos los proyectos
-  getAllProjects(): Project[] {
-    return projects;
+  async getAllProjects(): Promise<Project[]> {
+    const projects = await ProjectModel.find();
+    return projects.map(project => this.documentToProject(project));
   }
 
   // Obtener un proyecto por su ID
-  getProjectById(id: string): Project | undefined {
-    return projects.find(project => project.id === id);
+  async getProjectById(id: string): Promise<Project | null> {
+    const project = await ProjectModel.findOne({ id });
+    return project ? this.documentToProject(project) : null;
   }
 
   // Crear un nuevo proyecto
-  createProject(name: string, description: string, deadline: Date): Project {
-    const newProject: Project = {
+  async createProject(name: string, description: string, deadline: Date): Promise<Project> {
+    const newProject = new ProjectModel({
       id: uuidv4(),
       name,
       description,
       deadline,
       taskIds: [],
-      progress: 0,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+      progress: 0
+    });
 
-    projects.push(newProject);
-    return newProject;
+    await newProject.save();
+    return this.documentToProject(newProject);
   }
 
   // Actualizar un proyecto existente
-  updateProject(id: string, updates: Partial<Project>): Project | undefined {
-    const projectIndex = projects.findIndex(project => project.id === id);
+  async updateProject(id: string, updates: Partial<Project>): Promise<Project | null> {
+    const project = await ProjectModel.findOneAndUpdate(
+      { id },
+      { ...updates, updatedAt: new Date() },
+      { new: true }
+    );
     
-    if (projectIndex === -1) {
-      return undefined;
-    }
-
-    // Actualizar el proyecto
-    projects[projectIndex] = {
-      ...projects[projectIndex],
-      ...updates,
-      updatedAt: new Date() // Actualizar la fecha de modificación
-    };
-
-    return projects[projectIndex];
+    return project ? this.documentToProject(project) : null;
   }
 
   // Eliminar un proyecto
-  deleteProject(id: string): boolean {
-    const initialLength = projects.length;
-    projects = projects.filter(project => project.id !== id);
-    return projects.length < initialLength;
+  async deleteProject(id: string): Promise<boolean> {
+    const result = await ProjectModel.deleteOne({ id });
+    return result.deletedCount > 0;
   }
 
   // Añadir una tarea a un proyecto
-  addTaskToProject(projectId: string, taskId: string): Project | undefined {
-    const project = this.getProjectById(projectId);
+  async addTaskToProject(projectId: string, taskId: string): Promise<Project | null> {
+    const project = await ProjectModel.findOne({ id: projectId });
     if (!project) {
-      return undefined;
+      return null;
     }
 
-    // Verificar que la tarea existe
-    const task = this.taskService.getTaskById(taskId);
-    if (!task) {
-      return undefined;
+    if (!project.taskIds.includes(taskId)) {
+      project.taskIds.push(taskId);
+      await project.save();
     }
-
-    // Verificar que la tarea no esté ya en el proyecto
-    if (project.taskIds.includes(taskId)) {
-      return project;
-    }
-
-    // Actualizar la tarea con el projectId
-    this.taskService.updateTask(taskId, { projectId });
-
-    // Añadir la tarea al proyecto
-    project.taskIds.push(taskId);
     
-    // Actualizar el progreso del proyecto
-    this.updateProjectProgress(projectId);
-    
-    return this.updateProject(projectId, { taskIds: project.taskIds });
+    return this.documentToProject(project);
   }
 
   // Eliminar una tarea de un proyecto
-  removeTaskFromProject(projectId: string, taskId: string): Project | undefined {
-    const project = this.getProjectById(projectId);
+  async removeTaskFromProject(projectId: string, taskId: string): Promise<Project | null> {
+    const project = await ProjectModel.findOne({ id: projectId });
     if (!project) {
-      return undefined;
+      return null;
     }
 
-    // Verificar que la tarea existe en el proyecto
-    if (!project.taskIds.includes(taskId)) {
-      return project;
-    }
-
-    // Actualizar la tarea para quitar el projectId
-    this.taskService.updateTask(taskId, { projectId: undefined });
-
-    // Eliminar la tarea del proyecto
     project.taskIds = project.taskIds.filter(id => id !== taskId);
+    await project.save();
     
-    // Actualizar el progreso del proyecto
-    this.updateProjectProgress(projectId);
-    
-    return this.updateProject(projectId, { taskIds: project.taskIds });
+    return this.documentToProject(project);
   }
 
   // Obtener todas las tareas de un proyecto
-  getProjectTasks(projectId: string): Task[] {
-    const project = this.getProjectById(projectId);
-    if (!project) {
-      return [];
-    }
-
-    return project.taskIds
-      .map(taskId => this.taskService.getTaskById(taskId))
-      .filter((task): task is Task => task !== undefined);
+  async getProjectTasks(projectId: string): Promise<string[]> {
+    const project = await ProjectModel.findOne({ id: projectId });
+    return project ? project.taskIds : [];
   }
 
-  // Calcular y actualizar el progreso del proyecto
-  updateProjectProgress(projectId: string): Project | undefined {
-    const project = this.getProjectById(projectId);
-    if (!project) {
-      return undefined;
-    }
-
-    const tasks = this.getProjectTasks(projectId);
-    if (tasks.length === 0) {
-      return this.updateProject(projectId, { progress: 0 });
-    }
-
-    // Calcular el porcentaje de tareas completadas
-    const completedTasks = tasks.filter(task => task.status === TaskStatus.FINISHED).length;
-    const progress = Math.round((completedTasks / tasks.length) * 100);
-
+  // Actualizar el progreso de un proyecto
+  async updateProjectProgress(projectId: string, progress: number): Promise<Project | null> {
     return this.updateProject(projectId, { progress });
+  }
+
+  // Convertir documento de Mongoose a objeto Project
+  private documentToProject(doc: ProjectDocument): Project {
+    return {
+      id: doc.id,
+      name: doc.name,
+      description: doc.description,
+      deadline: doc.deadline,
+      taskIds: doc.taskIds,
+      progress: doc.progress,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt
+    };
   }
 }

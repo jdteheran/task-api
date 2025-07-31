@@ -1,85 +1,77 @@
-import type { Task, TaskComment } from '../models/Task';
-import { TaskStatus, TaskPriority } from '../models/Task';
+import { TaskStatus, type Task, type TaskComment, TaskPriority } from '../models/Task';
+import { TaskModel } from '../models/Task.schema';
+import type { TaskDocument } from '../models/Task.schema';
 import { v4 as uuidv4 } from 'uuid';
-
-// Almacenamiento en memoria para las tareas
-let tasks: Task[] = [];
 
 export class TaskService {
   // Obtener todas las tareas
-  getAllTasks(): Task[] {
-    return tasks;
+  async getAllTasks(): Promise<Task[]> {
+    const tasks = await TaskModel.find();
+    return tasks.map(task => this.documentToTask(task));
   }
 
   // Obtener una tarea por su ID
-  getTaskById(id: string): Task | undefined {
-    return tasks.find(task => task.id === id);
+  async getTaskById(id: string): Promise<Task | null> {
+    const task = await TaskModel.findOne({ id });
+    return task ? this.documentToTask(task) : null;
   }
 
   // Crear una nueva tarea
-  createTask(title: string, description: string, priority: TaskPriority = TaskPriority.MEDIUM, projectId?: string, deadline?: Date): Task {
-    const newTask: Task = {
+  async createTask(title: string, description: string, priority: TaskPriority = TaskPriority.MEDIUM, projectId?: string, deadline?: Date): Promise<Task> {
+    const newTask = new TaskModel({
       id: uuidv4(),
       title,
       description,
-      status: TaskStatus.BACKLOG, // Por defecto, las tareas nuevas están en Backlog
+      status: TaskStatus.BACKLOG,
       priority,
       projectId,
       deadline,
-      comments: [],
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
+      comments: []
+    });
 
-    tasks.push(newTask);
-    return newTask;
+    await newTask.save();
+    return this.documentToTask(newTask);
   }
 
   // Actualizar una tarea existente
-  updateTask(id: string, updates: Partial<Task>): Task | undefined {
-    const taskIndex = tasks.findIndex(task => task.id === id);
+  async updateTask(id: string, updates: Partial<Task>): Promise<Task | null> {
+    const task = await TaskModel.findOneAndUpdate(
+      { id },
+      { ...updates, updatedAt: new Date() },
+      { new: true }
+    );
     
-    if (taskIndex === -1) {
-      return undefined;
-    }
-
-    // Actualizar la tarea
-    tasks[taskIndex] = {
-      ...tasks[taskIndex],
-      ...updates,
-      updatedAt: new Date() // Actualizar la fecha de modificación
-    };
-
-    return tasks[taskIndex];
+    return task ? this.documentToTask(task) : null;
   }
 
   // Cambiar el estado de una tarea
-  changeTaskStatus(id: string, status: TaskStatus): Task | undefined {
+  async changeTaskStatus(id: string, status: TaskStatus): Promise<Task | null> {
     return this.updateTask(id, { status });
   }
 
   // Eliminar una tarea
-  deleteTask(id: string): boolean {
-    const initialLength = tasks.length;
-    tasks = tasks.filter(task => task.id !== id);
-    return tasks.length < initialLength;
+  async deleteTask(id: string): Promise<boolean> {
+    const result = await TaskModel.deleteOne({ id });
+    return result.deletedCount > 0;
   }
 
   // Filtrar tareas por estado
-  getTasksByStatus(status: TaskStatus): Task[] {
-    return tasks.filter(task => task.status === status);
+  async getTasksByStatus(status: TaskStatus): Promise<Task[]> {
+    const tasks = await TaskModel.find({ status });
+    return tasks.map(task => this.documentToTask(task));
   }
 
   // Filtrar tareas por prioridad
-  getTasksByPriority(priority: TaskPriority): Task[] {
-    return tasks.filter(task => task.priority === priority);
+  async getTasksByPriority(priority: TaskPriority): Promise<Task[]> {
+    const tasks = await TaskModel.find({ priority });
+    return tasks.map(task => this.documentToTask(task));
   }
 
   // Añadir un comentario a una tarea
-  addCommentToTask(taskId: string, text: string): Task | undefined {
-    const task = this.getTaskById(taskId);
+  async addCommentToTask(taskId: string, text: string): Promise<Task | null> {
+    const task = await TaskModel.findOne({ id: taskId });
     if (!task) {
-      return undefined;
+      return null;
     }
 
     const newComment: TaskComment = {
@@ -89,36 +81,39 @@ export class TaskService {
     };
 
     task.comments.push(newComment);
-    return this.updateTask(taskId, { comments: task.comments });
+    await task.save();
+    
+    return this.documentToTask(task);
   }
 
   // Obtener comentarios de una tarea
-  getTaskComments(taskId: string): TaskComment[] {
-    const task = this.getTaskById(taskId);
+  async getTaskComments(taskId: string): Promise<TaskComment[]> {
+    const task = await TaskModel.findOne({ id: taskId });
     if (!task) {
       return [];
     }
     return task.comments;
   }
 
-  // Obtener tareas próximas a vencer (en los próximos días)
-  getUpcomingTasks(days: number = 7): Task[] {
-    const today = new Date();
-    const futureDate = new Date(today);
-    futureDate.setDate(today.getDate() + days);
-
-    return tasks.filter(task => {
-      if (!task.deadline) return false;
-      return task.deadline >= today && task.deadline <= futureDate;
-    });
+  // Obtener tareas por proyecto
+  async getTasksByProject(projectId: string): Promise<Task[]> {
+    const tasks = await TaskModel.find({ projectId });
+    return tasks.map(task => this.documentToTask(task));
   }
 
-  // Obtener tareas vencidas
-  getOverdueTasks(): Task[] {
-    const today = new Date();
-    return tasks.filter(task => {
-      if (!task.deadline) return false;
-      return task.deadline < today && task.status !== TaskStatus.FINISHED;
-    });
+  // Convertir documento de Mongoose a objeto Task
+  private documentToTask(doc: TaskDocument): Task {
+    return {
+      id: doc.id,
+      title: doc.title,
+      description: doc.description,
+      status: doc.status,
+      priority: doc.priority,
+      projectId: doc.projectId,
+      deadline: doc.deadline,
+      comments: doc.comments,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt
+    };
   }
 }
