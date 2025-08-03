@@ -36,7 +36,6 @@ export class AuthService {
 
     // Crear usuario
     const newUser = new UserModel({
-      _id: uuidv4(),
       username: userData.username,
       email: userData.email,
       password: hashedPassword
