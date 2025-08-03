@@ -38,15 +38,7 @@ export const ProjectController = new Elysia({ prefix: '/projects' })
   })
 
   // Crear un nuevo proyecto
-  .post('/', 
-    {
-      body: t.Object({
-        name: t.String(),
-        description: t.String(),
-        deadline: t.String()
-      }),
-    },
-    async ({ body }: { body: ProjectBody }) => {
+  .post('/', async ({ body }: { body: ProjectBody }) => {
       try {
         // Validar formato de fecha
         const deadlineDate = new Date(body.deadline);
@@ -69,15 +61,7 @@ export const ProjectController = new Elysia({ prefix: '/projects' })
   )
 
   // Actualizar un proyecto
-  .put('/:id', 
-    {
-      body: t.Object({
-        name: t.Optional(t.String()),
-        description: t.Optional(t.String()),
-        deadline: t.Optional(t.String())
-      }),
-    },
-    async ({ params: { id }, body }: { params: { id: string }, body: ProjectUpdateBody }) => {
+  .put('/:id', async ({ params: { id }, body }: { params: { id: string }, body: ProjectUpdateBody }) => {
       try {
         // Verificar que el proyecto existe
         const existingProject = await projectService.getProjectById(id);

@@ -111,7 +111,7 @@ export class TaskService {
       priority: doc.priority,
       projectId: doc.projectId,
       deadline: doc.deadline,
-      comments: doc.comments,
+      comments: doc.comments || [],
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt
     };
