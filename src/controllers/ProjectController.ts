@@ -1,9 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { ProjectService } from '../services/ProjectService';
-import { TaskService } from '../services/TaskService';
 import { ApiResponse } from '../Utils/ApiResponse';
 
-const taskService = new TaskService();
 const projectService = new ProjectService();
 
 type ProjectBody = {
