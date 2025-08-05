@@ -1,6 +1,7 @@
 import { Elysia, t } from 'elysia';
 import { AuthService } from '../services/AuthService';
 import { ApiResponse } from '../Utils/ApiResponse';
+import { authGuard } from '../middleware/auth';
 import type { UserRegistration, UserLogin } from '../models/User';
 
 export const authController = new Elysia({ prefix: '/auth' })
@@ -75,73 +76,19 @@ export const authController = new Elysia({ prefix: '/auth' })
     })
   })
   
-  // Obtener perfil del usuario autenticado
-  .get('/profile', async ({ headers, set }) => {
-    try {
-      const authHeader = headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        set.status = 401;
-        return ApiResponse.error('Token de autorización requerido', 401);
-      }
-
-      const token = authHeader.substring(7);
-      const { userId } = AuthService.verifyToken(token);
-      
-      const user = await AuthService.getUserById(userId);
-      if (!user) {
-        set.status = 404;
-        return ApiResponse.error('Usuario no encontrado', 404);
-      }
-
-      return ApiResponse.success(user, 'Perfil obtenido exitosamente');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error interno del servidor';
-      
-      if (errorMessage.includes('Token inválido')) {
-        set.status = 401;
-        return ApiResponse.error('Token inválido', 401);
-      }
-      
-      set.status = 500;
-      return ApiResponse.error('Error interno del servidor', 500);
-    }
-  })
-  
-  // Validar token
-  .post('/validate', async ({ body, set }) => {
-    try {
-      const { token } = body as { token: string };
-      
-      if (!token) {
-        set.status = 400;
-        return ApiResponse.error('Token es requerido', 400);
-      }
-
-      const { userId } = AuthService.verifyToken(token);
-      const user = await AuthService.getUserById(userId);
-      
-      if (!user) {
-        set.status = 404;
-        return ApiResponse.error('Usuario no encontrado', 404);
-      }
-
-      return ApiResponse.success({
-        valid: true,
-        user
-      }, 'Token válido');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Error interno del servidor';
-      
-      if (errorMessage.includes('Token inválido')) {
-        set.status = 401;
-        return ApiResponse.error('Token inválido', 401);
-      }
-      
-      set.status = 500;
-      return ApiResponse.error('Error interno del servidor', 500);
-    }
-  }, {
-    body: t.Object({
-      token: t.String({ minLength: 1 })
-    })
-  });
+  // Rutas protegidas que requieren autenticación
+  .guard( authGuard, (app) => app
+      // Obtener perfil del usuario autenticado
+      .get('/profile', async ({ headers }) => {
+        try {
+          const authHeader = headers.authorization!;
+          const token = authHeader.substring(7);
+          const { userId } = AuthService.verifyToken(token);
+          
+          const user = await AuthService.getUserById(userId);
+          return ApiResponse.success(user, 'Perfil obtenido exitosamente');
+        } catch (error) {
+          return ApiResponse.error('Error interno del servidor', 500);
+        }
+      })
+  );
